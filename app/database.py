@@ -105,6 +105,29 @@ class SQLiteConnectionWrapper:
 
 
 
+from urllib.parse import urlparse
+import dns.resolver
+
+
+def _resolve_host_ip(hostname: str) -> str | None:
+    try:
+        import socket
+        return socket.gethostbyname(hostname)
+    except Exception:
+        pass
+
+    try:
+        resolver = dns.resolver.Resolver()
+        resolver.nameservers = ["8.8.8.8", "1.1.1.1"]
+        resolver.lifetime = 5
+        answers = resolver.resolve(hostname, "A")
+        if answers:
+            return answers[0].to_text()
+    except Exception:
+        pass
+    return None
+
+
 @contextmanager
 def get_connection() -> Generator:
     # Use SQLite if database_url is empty, starts with sqlite, or live DB is bypassed
@@ -129,12 +152,22 @@ def get_connection() -> Generator:
         )
 
     try:
+        parsed = urlparse(settings.database_url)
+        connect_kwargs = {
+            "row_factory": dict_row,
+            "connect_timeout": 10,
+        }
+        if parsed.hostname:
+            resolved_ip = _resolve_host_ip(parsed.hostname)
+            if resolved_ip:
+                connect_kwargs["hostaddr"] = resolved_ip
+
         with psycopg.connect(
             settings.database_url,
-            row_factory=dict_row,
-            connect_timeout=5,
+            **connect_kwargs,
         ) as connection:
             yield connection
     except psycopg.Error as exc:
-        raise HTTPException(status_code=503, detail="Could not connect to the database.") from exc
+        raise HTTPException(status_code=503, detail=f"Could not connect to the database: {exc}") from exc
+
 

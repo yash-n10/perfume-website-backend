@@ -25,7 +25,8 @@ def read_root() -> dict[str, str]:
         "name": "MOHERA API",
         "status": "online",
         "docs": "/docs",
-        "health": "/api/health"
+        "health": "/api/health",
+        "db_check": "/api/db-check"
     }
 
 
@@ -33,4 +34,22 @@ def read_root() -> dict[str, str]:
 def health_check() -> dict[str, str]:
     with get_connection() as connection:
         connection.execute("SELECT 1")
-    return {"status": "ok"}
+    return {"status": "ok"}
+
+
+@app.get("/api/db-check")
+def check_database() -> dict[str, str | bool]:
+    is_postgres = bool(settings.database_url and not settings.database_url.startswith("sqlite"))
+    db_type = "PostgreSQL" if is_postgres else "Local SQLite"
+    
+    with get_connection() as connection:
+        cursor = connection.execute("SELECT 1 as test")
+        row = cursor.fetchone()
+
+    return {
+        "connected": True,
+        "database_type": db_type,
+        "message": f"Successfully connected to {db_type} database.",
+        "test_query_result": row["test"] if isinstance(row, dict) else row[0]
+    }
+
