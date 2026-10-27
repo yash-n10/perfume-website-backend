@@ -38,7 +38,9 @@ def health_check() -> dict[str, str]:
 
 
 @app.get("/api/db-check")
+@app.get("/db-check")
 def check_database() -> dict[str, str | bool]:
+
     is_postgres = bool(settings.database_url and not settings.database_url.startswith("sqlite"))
     db_type = "PostgreSQL" if is_postgres else "Local SQLite"
     
