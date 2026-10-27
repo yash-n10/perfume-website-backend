@@ -3,11 +3,19 @@ import logging
 import secrets
 import smtplib
 
-import psycopg
-from fastapi import APIRouter, Depends, HTTPException, status
-from psycopg.errors import UniqueViolation
+import sqlite3
 
+try:
+    import psycopg
+    from psycopg.errors import UniqueViolation
+except ImportError:
+    psycopg = None
+    UniqueViolation = sqlite3.IntegrityError
+
+
+from fastapi import APIRouter, Depends, HTTPException, status
 from app.config import settings
+
 from app.database import get_connection
 from app.email_service import send_otp_email
 from app.schemas import (

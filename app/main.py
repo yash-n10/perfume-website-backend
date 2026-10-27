@@ -19,8 +19,18 @@ app.include_router(auth_router)
 app.include_router(enquiries_router)
 
 
+@app.get("/")
+def read_root() -> dict[str, str]:
+    return {
+        "name": "MOHERA API",
+        "status": "online",
+        "docs": "/docs",
+        "health": "/api/health"
+    }
+
+
 @app.get("/api/health")
 def health_check() -> dict[str, str]:
     with get_connection() as connection:
         connection.execute("SELECT 1")
-    return {"status": "ok"}
+    return {"status": "ok"}
