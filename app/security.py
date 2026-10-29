@@ -39,12 +39,52 @@ def create_access_token(user_id: int, email: str) -> str:
         {
             "sub": str(user_id),
             "email": email,
+            "role": "user",
             "iat": now,
             "exp": now + timedelta(minutes=settings.jwt_expiration_minutes),
         },
         settings.jwt_secret,
         algorithm="HS256",
     )
+
+
+def create_admin_access_token(email: str) -> str:
+    if not settings.jwt_secret:
+        raise HTTPException(status_code=503, detail="JWT_SECRET is not configured.")
+
+    now = datetime.now(timezone.utc)
+    return jwt.encode(
+        {
+            "sub": "admin",
+            "email": email,
+            "role": "admin",
+            "iat": now,
+            "exp": now + timedelta(minutes=settings.jwt_expiration_minutes * 4),
+        },
+        settings.jwt_secret,
+        algorithm="HS256",
+    )
+
+
+def get_current_admin(
+    credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
+) -> dict[str, str]:
+    unauthorized = HTTPException(
+        status_code=401,
+        detail="Admin access required or invalid token.",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    if credentials is None or not settings.jwt_secret:
+        raise unauthorized
+
+    try:
+        payload = jwt.decode(credentials.credentials, settings.jwt_secret, algorithms=["HS256"])
+        if payload.get("role") != "admin":
+            raise unauthorized
+        return {"email": payload.get("email", ""), "role": "admin"}
+    except (jwt.InvalidTokenError, KeyError, TypeError, ValueError):
+        raise unauthorized
+
 
 
 def get_current_user(

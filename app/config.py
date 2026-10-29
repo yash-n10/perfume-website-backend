@@ -23,6 +23,10 @@ class Settings(BaseSettings):
     smtp_from_email: str = ""
     smtp_use_tls: bool = True
 
+    admin_email: str = "admin@mohera.in"
+    admin_password: str = "MoheraAdmin@2026"
+
+
     @property
     def allowed_origins(self) -> list[str]:
         return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]

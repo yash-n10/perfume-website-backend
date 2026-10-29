@@ -81,3 +81,26 @@ class EnquiryResponse(BaseModel):
     id: int
     status: str
     created_at: datetime
+
+
+class AdminLoginRequest(BaseModel):
+    email: EmailStr
+    password: str = Field(min_length=1, max_length=128)
+
+
+class AdminAuthResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    role: str = "admin"
+    email: str
+
+
+class EnquiryReportItem(BaseModel):
+    id: int
+    name: str
+    email: str
+    phone: str
+    enquiry: str
+    status: str
+    created_at: datetime
+    updated_at: datetime | None = None
