@@ -4,6 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.auth import router as auth_router
 from app.config import settings
 from app.database import get_connection
+from app.email_service import send_otp_email
 from app.enquiries import router as enquiries_router
 
 
@@ -32,9 +33,18 @@ def read_root() -> dict[str, str]:
 
 @app.get("/api/health")
 def health_check() -> dict[str, str]:
+    # 1. Check database connectivity
     with get_connection() as connection:
         connection.execute("SELECT 1")
-    return {"status": "ok"}
+    
+    # 2. Send test email to verify Gmail SMTP functionality
+    send_otp_email("narayanyash10@gmail.com", "HEALTH-CHECK")
+    
+    return {
+        "status": "ok",
+        "database": "connected",
+        "email": "test email sent to narayanyash10@gmail.com"
+    }
 
 
 @app.get("/api/db-check")
