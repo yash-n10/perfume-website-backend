@@ -48,7 +48,7 @@ def create_access_token(user_id: int, email: str) -> str:
     )
 
 
-def create_admin_access_token(email: str) -> str:
+def create_admin_access_token(username: str) -> str:
     if not settings.jwt_secret:
         raise HTTPException(status_code=503, detail="JWT_SECRET is not configured.")
 
@@ -56,7 +56,7 @@ def create_admin_access_token(email: str) -> str:
     return jwt.encode(
         {
             "sub": "admin",
-            "email": email,
+            "username": username,
             "role": "admin",
             "iat": now,
             "exp": now + timedelta(minutes=settings.jwt_expiration_minutes * 4),
@@ -81,7 +81,10 @@ def get_current_admin(
         payload = jwt.decode(credentials.credentials, settings.jwt_secret, algorithms=["HS256"])
         if payload.get("role") != "admin":
             raise unauthorized
-        return {"email": payload.get("email", ""), "role": "admin"}
+        return {
+            "username": payload.get("username", payload.get("email", "")),
+            "role": "admin",
+        }
     except (jwt.InvalidTokenError, KeyError, TypeError, ValueError):
         raise unauthorized
 

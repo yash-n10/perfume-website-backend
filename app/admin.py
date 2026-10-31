@@ -8,7 +8,7 @@ from app.schemas import (
     EnquiryReportItem,
     UserResponse,
 )
-from app.security import create_admin_access_token, get_current_admin
+from app.security import create_admin_access_token, get_current_admin, verify_password
 
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
@@ -18,23 +18,61 @@ router = APIRouter(prefix="/api/admin", tags=["admin"])
 def admin_login(payload: AdminLoginRequest) -> AdminAuthResponse:
     """
     1. Admin Login API:
-    Authenticates with admin credentials configured in settings and returns an admin JWT token.
+    Authenticates admin credentials from database (or config fallback) and returns an admin JWT token.
+    Initial credentials: admin / Yash#1008
     """
-    clean_email = payload.email.strip().lower()
-    expected_email = settings.admin_email.strip().lower()
+    clean_username = payload.username.strip()
+    authenticated = False
+    admin_user = clean_username
 
-    if clean_email != expected_email or payload.password != settings.admin_password:
+    # 1. Attempt DB authentication against `admins` table
+    try:
+        with get_connection() as connection:
+            cursor = connection.execute(
+                """
+                SELECT id, username, password_hash, role
+                FROM admins
+                WHERE lower(username) = lower(%s)
+                LIMIT 1
+                """,
+                (clean_username,),
+            )
+            row = cursor.fetchone()
+            if row:
+                stored_hash = row.get("password_hash", "")
+                if verify_password(payload.password, stored_hash):
+                    authenticated = True
+                    admin_user = row.get("username", clean_username)
+                else:
+                    # Also support sha256 fallback if seeded with sha256
+                    import hashlib
+                    if stored_hash == hashlib.sha256(payload.password.encode()).hexdigest():
+                        authenticated = True
+                        admin_user = row.get("username", clean_username)
+    except Exception:
+        # If DB query or table creation encountered a temporary issue, fallback to config credentials
+        pass
+
+    # 2. Config fallback check (initial credentials: admin / Yash#1008)
+    if not authenticated:
+        expected_user = getattr(settings, "admin_username", "admin").strip().lower()
+        expected_pass = getattr(settings, "admin_password", "Yash#1008")
+        if clean_username.lower() == expected_user and payload.password == expected_pass:
+            authenticated = True
+            admin_user = clean_username
+
+    if not authenticated:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid admin credentials.",
         )
 
-    token = create_admin_access_token(clean_email)
+    token = create_admin_access_token(admin_user)
     return AdminAuthResponse(
         access_token=token,
         token_type="bearer",
         role="admin",
-        email=clean_email,
+        username=admin_user,
     )
 
 

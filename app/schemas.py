@@ -84,7 +84,7 @@ class EnquiryResponse(BaseModel):
 
 
 class AdminLoginRequest(BaseModel):
-    email: EmailStr
+    username: str = Field(min_length=1, max_length=128)
     password: str = Field(min_length=1, max_length=128)
 
 
@@ -92,7 +92,7 @@ class AdminAuthResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
     role: str = "admin"
-    email: str
+    username: str
 
 
 class EnquiryReportItem(BaseModel):

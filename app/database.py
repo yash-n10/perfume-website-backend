@@ -56,6 +56,31 @@ def init_sqlite_db(conn: sqlite3.Connection) -> None:
         )
         """
     )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS admins (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT NOT NULL UNIQUE,
+            password_hash TEXT NOT NULL,
+            role TEXT NOT NULL DEFAULT 'admin',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+    # Seed initial admin if it doesn't exist
+    cursor = conn.cursor()
+    cursor.execute("SELECT id FROM admins WHERE lower(username) = 'admin'")
+    if not cursor.fetchone():
+        try:
+            from app.security import hash_password
+            admin_hash = hash_password("Yash#1008")
+        except Exception:
+            import hashlib
+            admin_hash = hashlib.sha256("Yash#1008".encode()).hexdigest()
+        conn.execute(
+            "INSERT INTO admins (username, password_hash, role) VALUES ('admin', ?, 'admin')",
+            (admin_hash,),
+        )
     conn.commit()
 
 
@@ -166,6 +191,36 @@ def get_connection() -> Generator:
             settings.database_url,
             **connect_kwargs,
         ) as connection:
+            # Ensure schema and initial admin exist in PostgreSQL
+            try:
+                with connection.cursor() as cur:
+                    cur.execute(
+                        """
+                        CREATE TABLE IF NOT EXISTS admins (
+                            id BIGSERIAL PRIMARY KEY,
+                            username VARCHAR(100) NOT NULL UNIQUE,
+                            password_hash VARCHAR(255) NOT NULL,
+                            role VARCHAR(50) NOT NULL DEFAULT 'admin',
+                            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                            updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+                        );
+                        """
+                    )
+                    cur.execute("SELECT id FROM admins WHERE lower(username) = 'admin' LIMIT 1;")
+                    if not cur.fetchone():
+                        try:
+                            from app.security import hash_password
+                            admin_hash = hash_password("Yash#1008")
+                        except Exception:
+                            import hashlib
+                            admin_hash = hashlib.sha256("Yash#1008".encode()).hexdigest()
+                        cur.execute(
+                            "INSERT INTO admins (username, password_hash, role) VALUES (%s, %s, %s) ON CONFLICT (username) DO NOTHING;",
+                            ("admin", admin_hash, "admin"),
+                        )
+                connection.commit()
+            except Exception:
+                connection.rollback()
             yield connection
     except psycopg.Error as exc:
         raise HTTPException(status_code=503, detail=f"Could not connect to the database: {exc}") from exc

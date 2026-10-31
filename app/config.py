@@ -23,8 +23,9 @@ class Settings(BaseSettings):
     smtp_from_email: str = ""
     smtp_use_tls: bool = True
 
+    admin_username: str = "admin"
+    admin_password: str = "Yash#1008"
     admin_email: str = "admin@mohera.in"
-    admin_password: str = "MoheraAdmin@2026"
 
 
     @property
