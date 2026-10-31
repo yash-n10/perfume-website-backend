@@ -69,6 +69,19 @@ def init_sqlite_db(conn: sqlite3.Connection) -> None:
     )
     conn.execute(
         """
+        CREATE TABLE IF NOT EXISTS products (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            product_name TEXT NOT NULL,
+            price REAL NOT NULL DEFAULT 0.00,
+            image TEXT,
+            description TEXT,
+            status TEXT NOT NULL DEFAULT 'active',
+            add_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+    conn.execute(
+        """
         CREATE TABLE IF NOT EXISTS order_head (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             customer_name TEXT NOT NULL,
@@ -254,4 +267,4 @@ def get_connection() -> Generator:
     except psycopg.Error as exc:
         raise HTTPException(status_code=503, detail=f"Could not connect to the database: {exc}") from exc
 
-
+

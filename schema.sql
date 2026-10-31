@@ -61,7 +61,23 @@ CREATE TABLE IF NOT EXISTS admins (
 
 CREATE INDEX IF NOT EXISTS idx_admins_username ON admins (LOWER(username));
 
--- 5. Order Head Table
+-- 5. Products Table
+-- Stores perfume product catalogue
+CREATE TABLE IF NOT EXISTS products (
+    id SERIAL PRIMARY KEY,
+    product_name VARCHAR(255) NOT NULL,
+    price NUMERIC(10, 2) NOT NULL DEFAULT 0.00,
+    image VARCHAR(500),
+    description TEXT,
+    status VARCHAR(20) NOT NULL DEFAULT 'active'
+        CHECK (status IN ('active', 'inactive')),
+    add_time TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_products_status ON products (status);
+CREATE INDEX IF NOT EXISTS idx_products_add_time ON products (add_time DESC);
+
+-- 6. Order Head Table
 -- Stores customer order summary / header
 CREATE TABLE IF NOT EXISTS order_head (
     id SERIAL PRIMARY KEY,

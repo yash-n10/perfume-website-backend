@@ -1,6 +1,8 @@
 .env
+.env*
+.env.*
 .venv/
 __pycache__/
 *.py[cod]
 *.db
-local_app.db
+local_app.db

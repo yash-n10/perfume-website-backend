@@ -8,6 +8,7 @@ from app.database import get_connection
 from app.email_service import send_otp_email
 from app.enquiries import router as enquiries_router
 from app.orders import router as orders_router
+from app.products import router as products_router
 
 
 app = FastAPI(title="MOHERA API", version="1.0.0")
@@ -27,6 +28,7 @@ app.add_middleware(
 app.include_router(auth_router)
 app.include_router(enquiries_router)
 app.include_router(orders_router)
+app.include_router(products_router)
 app.include_router(admin_router)
 
 

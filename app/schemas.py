@@ -112,6 +112,30 @@ class EnquiryStatusUpdateRequest(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# Products
+# ---------------------------------------------------------------------------
+
+class ProductCreate(BaseModel):
+    product_name: str = Field(min_length=1, max_length=255)
+    price: float = Field(ge=0)
+    image: str | None = Field(default=None, max_length=500)
+    description: str | None = None
+    status: str = Field(default="active")  # 'active' | 'inactive'
+
+
+class ProductResponse(BaseModel):
+    id: int
+    product_name: str
+    price: float
+    image: str | None = None
+    description: str | None = None
+    status: str
+    add_time: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+# ---------------------------------------------------------------------------
 # Orders
 # ---------------------------------------------------------------------------
 
