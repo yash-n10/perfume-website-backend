@@ -27,6 +27,11 @@ class Settings(BaseSettings):
     admin_password: str = "Yash#1008"
     admin_email: str = "admin@mohera.in"
 
+    whatsapp_api_key: str = ""
+    whatsapp_api_url: str = "https://graph.facebook.com/v18.0"
+    whatsapp_phone_number_id: str = ""
+    gst_number: str = "27AABCM1234F1Z1"
+
 
     @property
     def allowed_origins(self) -> list[str]:

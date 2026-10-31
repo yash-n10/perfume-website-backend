@@ -160,13 +160,15 @@ class OrderDetailResponse(BaseModel):
 class OrderHeadCreate(BaseModel):
     customer_name: str = Field(min_length=1, max_length=160)
     phone: str = Field(min_length=1, max_length=40)
-    email: EmailStr
+    email: str = Field(default="")
     address: str = Field(min_length=1)
     order_type: str = Field(default="online")          # 'online' | 'offline'
     total_price: float = Field(ge=0)
     payment_mode: str = Field(min_length=1, max_length=50)
     payment_status: str = Field(default="pending")     # 'success' | 'cancel' | 'failed'
     paid_status: int = Field(default=0)                # 0 or 1
+    send_email: bool = Field(default=True)
+    send_whatsapp: bool = Field(default=True)
     items: List[OrderDetailCreate]
 
 
@@ -183,6 +185,10 @@ class OrderHeadResponse(BaseModel):
     paid_status: int
     order_datetime: datetime
     items: List[OrderDetailResponse] = []
+    email_sent: bool = False
+    whatsapp_sent: bool = False
+    whatsapp_url: str | None = None
+    gst_number: str = "27AABCM1234F1Z1"
 
     model_config = ConfigDict(from_attributes=True)
 
