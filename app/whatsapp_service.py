@@ -125,3 +125,4 @@ def send_order_receipt_whatsapp(order: dict[str, Any]) -> bool:
         logger.warning("Could not send WhatsApp message via API: %s", exc)
 
     return False
+
