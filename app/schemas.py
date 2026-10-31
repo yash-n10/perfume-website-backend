@@ -1,6 +1,7 @@
 from datetime import datetime
+from typing import List
 
-from pydantic import BaseModel, EmailStr, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
 
 
 class OtpSendRequest(BaseModel):
@@ -108,4 +109,56 @@ class EnquiryReportItem(BaseModel):
 
 class EnquiryStatusUpdateRequest(BaseModel):
     status: str = Field(min_length=1, max_length=50)
+
+
+# ---------------------------------------------------------------------------
+# Orders
+# ---------------------------------------------------------------------------
+
+class OrderDetailCreate(BaseModel):
+    product_name: str = Field(min_length=1, max_length=255)
+    quantity: int = Field(ge=1)
+    unit_price: float = Field(ge=0)
+    total_price: float = Field(ge=0)
+
+
+class OrderDetailResponse(BaseModel):
+    id: int
+    order_id: int
+    product_name: str
+    quantity: int
+    unit_price: float
+    total_price: float
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class OrderHeadCreate(BaseModel):
+    customer_name: str = Field(min_length=1, max_length=160)
+    phone: str = Field(min_length=1, max_length=40)
+    email: EmailStr
+    address: str = Field(min_length=1)
+    order_type: str = Field(default="online")          # 'online' | 'offline'
+    total_price: float = Field(ge=0)
+    payment_mode: str = Field(min_length=1, max_length=50)
+    payment_status: str = Field(default="pending")     # 'success' | 'cancel' | 'failed'
+    paid_status: int = Field(default=0)                # 0 or 1
+    items: List[OrderDetailCreate]
+
+
+class OrderHeadResponse(BaseModel):
+    id: int
+    customer_name: str
+    phone: str
+    email: str
+    address: str
+    order_type: str
+    total_price: float
+    payment_mode: str
+    payment_status: str
+    paid_status: int
+    order_datetime: datetime
+    items: List[OrderDetailResponse] = []
+
+    model_config = ConfigDict(from_attributes=True)
 

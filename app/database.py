@@ -67,6 +67,35 @@ def init_sqlite_db(conn: sqlite3.Connection) -> None:
         )
         """
     )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS order_head (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            customer_name TEXT NOT NULL,
+            phone TEXT NOT NULL,
+            email TEXT NOT NULL,
+            address TEXT NOT NULL,
+            order_type TEXT NOT NULL DEFAULT 'online',
+            total_price REAL NOT NULL DEFAULT 0.00,
+            payment_mode TEXT NOT NULL,
+            payment_status TEXT NOT NULL DEFAULT 'pending',
+            paid_status INTEGER NOT NULL DEFAULT 0,
+            order_datetime TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS order_details (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            order_id INTEGER NOT NULL REFERENCES order_head(id) ON DELETE CASCADE,
+            product_name TEXT NOT NULL,
+            quantity INTEGER NOT NULL DEFAULT 1,
+            unit_price REAL NOT NULL,
+            total_price REAL NOT NULL
+        )
+        """
+    )
     # Seed initial admin if it doesn't exist
     cursor = conn.cursor()
     cursor.execute("SELECT id FROM admins WHERE lower(username) = 'admin'")

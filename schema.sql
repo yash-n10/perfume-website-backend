@@ -61,6 +61,42 @@ CREATE TABLE IF NOT EXISTS admins (
 
 CREATE INDEX IF NOT EXISTS idx_admins_username ON admins (LOWER(username));
 
+-- 5. Order Head Table
+-- Stores customer order summary / header
+CREATE TABLE IF NOT EXISTS order_head (
+    id SERIAL PRIMARY KEY,
+    customer_name VARCHAR(160) NOT NULL,
+    phone VARCHAR(40) NOT NULL,
+    email VARCHAR(255) NOT NULL,
+    address TEXT NOT NULL,
+    order_type VARCHAR(20) NOT NULL DEFAULT 'online'
+        CHECK (order_type IN ('online', 'offline')),
+    total_price NUMERIC(10, 2) NOT NULL DEFAULT 0.00,
+    payment_mode VARCHAR(50) NOT NULL,
+    payment_status VARCHAR(20) NOT NULL DEFAULT 'pending'
+        CHECK (payment_status IN ('success', 'cancel', 'failed')),
+    paid_status SMALLINT NOT NULL DEFAULT 0
+        CHECK (paid_status IN (0, 1)),
+    order_datetime TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_order_head_email ON order_head (LOWER(email));
+CREATE INDEX IF NOT EXISTS idx_order_head_status ON order_head (payment_status);
+CREATE INDEX IF NOT EXISTS idx_order_head_datetime ON order_head (order_datetime DESC);
+
+-- 6. Order Details Table
+-- Stores individual line items for each order
+CREATE TABLE IF NOT EXISTS order_details (
+    id SERIAL PRIMARY KEY,
+    order_id INT NOT NULL REFERENCES order_head(id) ON DELETE CASCADE,
+    product_name VARCHAR(255) NOT NULL,
+    quantity INT NOT NULL DEFAULT 1 CHECK (quantity > 0),
+    unit_price NUMERIC(10, 2) NOT NULL,
+    total_price NUMERIC(10, 2) NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_order_details_order_id ON order_details (order_id);
+
 -- Optional trigger function to auto-update updated_at timestamp
 CREATE OR REPLACE FUNCTION trigger_set_timestamp()
 RETURNS TRIGGER AS $$
