@@ -246,6 +246,39 @@ def get_connection() -> Generator:
                             created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
                             updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
                         );
+
+                        CREATE TABLE IF NOT EXISTS products (
+                            id SERIAL PRIMARY KEY,
+                            product_name VARCHAR(255) NOT NULL,
+                            price NUMERIC(10, 2) NOT NULL DEFAULT 0.00,
+                            image VARCHAR(500),
+                            description TEXT,
+                            status VARCHAR(20) NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'inactive')),
+                            add_time TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+                        );
+
+                        CREATE TABLE IF NOT EXISTS order_head (
+                            id SERIAL PRIMARY KEY,
+                            customer_name VARCHAR(255) NOT NULL,
+                            phone VARCHAR(50) NOT NULL,
+                            email VARCHAR(255) NOT NULL,
+                            address TEXT NOT NULL,
+                            order_type VARCHAR(50) NOT NULL DEFAULT 'online',
+                            total_price NUMERIC(10, 2) NOT NULL DEFAULT 0.00,
+                            payment_mode VARCHAR(50) NOT NULL,
+                            payment_status VARCHAR(50) NOT NULL DEFAULT 'pending',
+                            paid_status INT NOT NULL DEFAULT 0,
+                            order_datetime TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+                        );
+
+                        CREATE TABLE IF NOT EXISTS order_details (
+                            id SERIAL PRIMARY KEY,
+                            order_id INT NOT NULL REFERENCES order_head(id) ON DELETE CASCADE,
+                            product_name VARCHAR(255) NOT NULL,
+                            quantity INT NOT NULL DEFAULT 1,
+                            unit_price NUMERIC(10, 2) NOT NULL,
+                            total_price NUMERIC(10, 2) NOT NULL
+                        );
                         """
                     )
                     cur.execute("SELECT id FROM admins WHERE lower(username) = 'admin' LIMIT 1;")
