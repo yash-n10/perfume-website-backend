@@ -191,4 +191,10 @@ class OrderHeadResponse(BaseModel):
     gst_number: str = "27AABCM1234F1Z1"
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class OrderStatusUpdateRequest(BaseModel):
+    payment_status: str | None = None  # 'success' | 'pending' | 'failed' | 'cancelled'
+    paid_status: int | None = None     # 0 or 1
+
 
