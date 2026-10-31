@@ -6,6 +6,7 @@ from app.schemas import (
     AdminAuthResponse,
     AdminLoginRequest,
     EnquiryReportItem,
+    EnquiryStatusUpdateRequest,
     UserResponse,
 )
 from app.security import create_admin_access_token, get_current_admin, verify_password
@@ -137,3 +138,31 @@ def get_enquiries_report(
         rows = cursor.fetchall() or []
 
     return [EnquiryReportItem.model_validate(row) for row in rows]
+
+
+@router.patch("/enquiries/{enquiry_id}/status", response_model=EnquiryReportItem)
+def update_enquiry_status(
+    enquiry_id: int,
+    payload: EnquiryStatusUpdateRequest,
+    admin: dict[str, str] = Depends(get_current_admin),
+) -> EnquiryReportItem:
+    """
+    4. Update Enquiry Status API:
+    Allows admin to update an enquiry's status ('new', 'in_progress', 'resolved').
+    """
+    new_status = payload.status.strip().lower()
+    with get_connection() as connection:
+        cursor = connection.execute(
+            """
+            UPDATE enquiries
+            SET status = %s, updated_at = CURRENT_TIMESTAMP
+            WHERE id = %s
+            RETURNING id, name, email, phone, enquiry, status, created_at, updated_at
+            """,
+            (new_status, enquiry_id),
+        )
+        row = cursor.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Enquiry not found.")
+
+    return EnquiryReportItem.model_validate(row)

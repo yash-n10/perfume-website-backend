@@ -103,4 +103,9 @@ class EnquiryReportItem(BaseModel):
     enquiry: str
     status: str
     created_at: datetime
-    updated_at: datetime | None = None
+    updated_at: datetime | None = None
+
+
+class EnquiryStatusUpdateRequest(BaseModel):
+    status: str = Field(min_length=1, max_length=50)
+
