@@ -415,6 +415,32 @@ def get_connection() -> Generator:
                             "INSERT INTO admins (username, password_hash, role) VALUES (%s, %s, %s) ON CONFLICT (username) DO NOTHING;",
                             ("admin", admin_hash, "admin"),
                         )
+
+                    # Ensure standard products are seeded in PostgreSQL if table is empty
+                    cur.execute("SELECT COUNT(*) AS total FROM products;")
+                    p_count = cur.fetchone()
+                    total_prods = p_count.get("total", 0) if isinstance(p_count, dict) else (p_count[0] if p_count else 0)
+                    if total_prods == 0:
+                        default_products = [
+                            ("Mohera Belle", 2499.00, "/products/belle_poster.jpeg", "Grace captured in every drop. Designed for the effortlessly elegant woman.", "active"),
+                            ("Mohera Elan", 2499.00, "/products/elan_poster.jpeg", "Vivacious. Bold. Unapologetically you. High-energy fragrance.", "active"),
+                            ("Mohera Drive", 2499.00, "/products/drive_poster.jpeg", "Fuel your ambition. Built for the modern man with relentless momentum.", "active"),
+                            ("Mohera Titan", 2499.00, "/products/titan_poster.jpeg", "A presence carved in strength. Rich cedar, dark leather, and subtle warm spices.", "active"),
+                            ("Mohera Luna", 2799.00, "/products/luna_poster.jpeg", "Grace and allure for unforgettable evenings. Luminous, ethereal top notes.", "active"),
+                            ("Devinoire Aphira", 2999.00, "/products/devinoire/aphira.jpeg", "Devinoire luxury fragrance collection - Aphira.", "active"),
+                            ("Devinoire Ares", 2999.00, "/products/devinoire/ares.jpeg", "Devinoire luxury fragrance collection - Ares.", "active"),
+                            ("Devinoire Athena", 2999.00, "/products/devinoire/athena.jpeg", "Devinoire luxury fragrance collection - Athena.", "active"),
+                            ("Devinoire Hades", 2999.00, "/products/devinoire/hades.jpeg", "Devinoire luxury fragrance collection - Hades.", "active"),
+                            ("Devinoire Hera", 2999.00, "/products/devinoire/hera.jpeg", "Devinoire luxury fragrance collection - Hera.", "active"),
+                            ("Devinoire Nereus", 2999.00, "/products/devinoire/nereus.jpeg", "Devinoire luxury fragrance collection - Nereus.", "active"),
+                            ("Devinoire Orion", 2999.00, "/products/devinoire/orion.jpeg", "Devinoire luxury fragrance collection - Orion.", "active"),
+                            ("Devinoire Sephora", 2999.00, "/products/devinoire/sephora.jpeg", "Devinoire luxury fragrance collection - Sephora.", "active"),
+                        ]
+                        for p in default_products:
+                            cur.execute(
+                                "INSERT INTO products (product_name, price, image, description, status) VALUES (%s, %s, %s, %s, %s);",
+                                p,
+                            )
                 connection.commit()
             except Exception:
                 connection.rollback()
