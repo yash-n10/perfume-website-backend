@@ -233,6 +233,15 @@ class CartResponse(BaseModel):
     count: int = 0
 
 
+class CartSyncItem(BaseModel):
+    product_id: int
+    quantity: int = Field(default=1, ge=1)
+
+
+class CartSyncRequest(BaseModel):
+    items: List[CartSyncItem] = []
+
+
 # ---------------------------------------------------------------------------
 # Addresses
 # ---------------------------------------------------------------------------
@@ -286,6 +295,27 @@ class CheckoutRequest(BaseModel):
     address_id: int | None = None
     address: AddressCreate | None = None
     payment_mode: str = Field(default="Cash on Delivery", max_length=50)
+
+
+class GuestCheckoutItem(BaseModel):
+    product_id: int | None = None
+    product_name: str = Field(min_length=1, max_length=255)
+    quantity: int = Field(default=1, ge=1)
+    unit_price: float = Field(ge=0)
+    total_price: float = Field(ge=0)
+
+
+class GuestCheckoutRequest(BaseModel):
+    customer_name: str = Field(min_length=1, max_length=160)
+    phone: str = Field(min_length=1, max_length=40)
+    email: str = Field(default="")
+    address_line1: str = Field(min_length=1, max_length=255)
+    address_line2: str | None = None
+    city: str = Field(min_length=1, max_length=100)
+    state: str = Field(min_length=1, max_length=100)
+    pincode: str = Field(min_length=1, max_length=20)
+    payment_mode: str = Field(default="Cash on Delivery", max_length=50)
+    items: List[GuestCheckoutItem]
 
 
 

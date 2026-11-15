@@ -5,6 +5,7 @@ from app.schemas import (
     CartItemResponse,
     CartItemUpdate,
     CartResponse,
+    CartSyncRequest,
     UserResponse,
 )
 from app.security import get_current_user
@@ -92,6 +93,46 @@ def add_to_cart(
                 "INSERT INTO cart_items (user_id, product_id, quantity) VALUES (%s, %s, %s)",
                 (user.id, payload.product_id, payload.quantity),
             )
+
+        return _get_user_cart(conn, user.id)
+
+
+@router.post("/sync", response_model=CartResponse)
+def sync_cart(
+    payload: CartSyncRequest,
+    user: UserResponse = Depends(get_current_user),
+) -> CartResponse:
+    """
+    Merge guest/session cart items into the user's database cart upon login.
+    """
+    with get_connection() as conn:
+        for item in payload.items:
+            if item.quantity <= 0:
+                continue
+            # Check if product exists
+            prod = conn.execute(
+                "SELECT id FROM products WHERE id = %s",
+                (item.product_id,),
+            ).fetchone()
+            if not prod:
+                continue
+
+            existing = conn.execute(
+                "SELECT id, quantity FROM cart_items WHERE user_id = %s AND product_id = %s",
+                (user.id, item.product_id),
+            ).fetchone()
+
+            if existing:
+                new_qty = existing["quantity"] + item.quantity
+                conn.execute(
+                    "UPDATE cart_items SET quantity = %s WHERE id = %s",
+                    (new_qty, existing["id"]),
+                )
+            else:
+                conn.execute(
+                    "INSERT INTO cart_items (user_id, product_id, quantity) VALUES (%s, %s, %s)",
+                    (user.id, item.product_id, item.quantity),
+                )
 
         return _get_user_cart(conn, user.id)
 

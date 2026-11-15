@@ -7,6 +7,7 @@ from app.database import get_connection
 from app.email_service import send_order_receipt_email
 from app.schemas import (
     CheckoutRequest,
+    GuestCheckoutRequest,
     OrderDetailResponse,
     OrderHeadCreate,
     OrderHeadResponse,
@@ -361,6 +362,134 @@ def checkout_cart(
     return OrderHeadResponse(
         id=head_row["id"],
         user_id=head_row.get("user_id"),
+        customer_name=head_row["customer_name"],
+        phone=head_row["phone"],
+        email=head_row["email"],
+        address=head_row["address"],
+        order_type=head_row["order_type"],
+        total_price=head_row["total_price"],
+        payment_mode=head_row["payment_mode"],
+        payment_status=head_row["payment_status"],
+        paid_status=head_row["paid_status"],
+        order_datetime=head_row["order_datetime"],
+        items=inserted_items,
+        email_sent=email_sent,
+        whatsapp_sent=whatsapp_sent,
+        whatsapp_url=whatsapp_url,
+        gst_number=getattr(settings, "gst_number", "27AABCM1234F1Z1"),
+    )
+
+
+@router.post("/guest-checkout", response_model=OrderHeadResponse, status_code=201)
+def guest_checkout(payload: GuestCheckoutRequest) -> OrderHeadResponse:
+    """
+    Guest Checkout without login:
+    - Creates order in order_head with user_id = None
+    - Inserts line items in order_details
+    - Sends receipt via email and/or WhatsApp
+    - Returns OrderHeadResponse with id and invoice info
+    """
+    if not payload.items:
+        raise HTTPException(status_code=400, detail="Order must contain at least one item.")
+
+    parts = [payload.address_line1.strip()]
+    if payload.address_line2:
+        parts.append(payload.address_line2.strip())
+    parts.append(f"{payload.city.strip()}, {payload.state.strip()} - {payload.pincode.strip()}")
+    shipping_address = ", ".join(parts)
+
+    total_price = sum(item.total_price for item in payload.items)
+    total_price = round(total_price, 2)
+
+    payment_mode = payload.payment_mode or "Cash on Delivery"
+
+    with get_connection() as conn:
+        head_row = conn.execute(
+            """
+            INSERT INTO order_head (
+                user_id, customer_name, phone, email, address,
+                order_type, total_price, payment_mode,
+                payment_status, paid_status
+            )
+            VALUES (NULL, %s, %s, %s, %s, 'online', %s, %s, 'pending', 0)
+            RETURNING
+                id, user_id, customer_name, phone, email, address,
+                order_type, total_price, payment_mode,
+                payment_status, paid_status, order_datetime
+            """,
+            (
+                payload.customer_name.strip(),
+                payload.phone.strip(),
+                payload.email.strip().lower() if payload.email else "",
+                shipping_address.strip(),
+                total_price,
+                payment_mode.strip(),
+            ),
+        ).fetchone()
+
+        if not head_row:
+            raise HTTPException(status_code=500, detail="Failed to place order.")
+
+        order_id = head_row["id"]
+
+        inserted_items: list[OrderDetailResponse] = []
+        for item in payload.items:
+            detail_row = conn.execute(
+                """
+                INSERT INTO order_details (
+                    order_id, product_id, product_name, quantity, unit_price, total_price
+                )
+                VALUES (%s, %s, %s, %s, %s, %s)
+                RETURNING id, order_id, product_id, product_name, quantity, unit_price, total_price
+                """,
+                (
+                    order_id,
+                    item.product_id,
+                    item.product_name.strip(),
+                    item.quantity,
+                    item.unit_price,
+                    item.total_price,
+                ),
+            ).fetchone()
+            inserted_items.append(OrderDetailResponse.model_validate(detail_row))
+
+    order_dict = {
+        "id": head_row["id"],
+        "customer_name": head_row["customer_name"],
+        "phone": head_row["phone"],
+        "email": head_row["email"],
+        "address": head_row["address"],
+        "order_type": head_row["order_type"],
+        "total_price": head_row["total_price"],
+        "payment_mode": head_row["payment_mode"],
+        "payment_status": head_row["payment_status"],
+        "paid_status": head_row["paid_status"],
+        "order_datetime": head_row["order_datetime"],
+        "items": [i.model_dump() for i in inserted_items],
+    }
+
+    email_sent = False
+    if order_dict.get("email"):
+        try:
+            email_sent = send_order_receipt_email(order_dict)
+        except Exception:
+            email_sent = False
+
+    whatsapp_sent = False
+    if order_dict.get("phone"):
+        try:
+            whatsapp_sent = send_order_receipt_whatsapp(order_dict)
+        except Exception:
+            whatsapp_sent = False
+
+    whatsapp_url = build_whatsapp_web_url(
+        head_row["phone"],
+        format_whatsapp_receipt_text(order_dict),
+    )
+
+    return OrderHeadResponse(
+        id=head_row["id"],
+        user_id=None,
         customer_name=head_row["customer_name"],
         phone=head_row["phone"],
         email=head_row["email"],
