@@ -108,28 +108,7 @@ def add_to_cart(
         ).fetchone()
 
         if not prod:
-            # Fallback 1: Try to find any active product
-            first_prod = conn.execute(
-                "SELECT id FROM products WHERE status = 'active' ORDER BY id ASC LIMIT 1"
-            ).fetchone()
-            if first_prod:
-                payload.product_id = first_prod["id"]
-                prod = first_prod
-            else:
-                # Fallback 2: Insert Mohera Belle and use its id
-                new_p = conn.execute(
-                    """
-                    INSERT INTO products (product_name, price, image, description, status)
-                    VALUES (%s, %s, %s, %s, %s)
-                    RETURNING id
-                    """,
-                    ("Mohera Belle", 2499.00, "/products/belle_poster.jpeg", "Luxury Haute Parfumerie", "active"),
-                ).fetchone()
-                if new_p:
-                    payload.product_id = new_p["id"]
-                    prod = new_p
-                else:
-                    raise HTTPException(status_code=404, detail="Product not found.")
+            raise HTTPException(status_code=404, detail=f"Product with ID {payload.product_id} not found. Please refresh and try again.")
 
         # Check if already in cart
         existing = conn.execute(
@@ -171,13 +150,8 @@ def sync_cart(
                 (item.product_id,),
             ).fetchone()
             if not prod:
-                first = conn.execute(
-                    "SELECT id FROM products WHERE status = 'active' ORDER BY id ASC LIMIT 1"
-                ).fetchone()
-                if first:
-                    target_id = first["id"]
-                else:
-                    continue
+                # Skip items with invalid product IDs during sync (don't silently reassign)
+                continue
             else:
                 target_id = prod["id"]
 
