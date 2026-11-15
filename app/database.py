@@ -84,6 +84,7 @@ def init_sqlite_db(conn: sqlite3.Connection) -> None:
         """
         CREATE TABLE IF NOT EXISTS order_head (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER REFERENCES users(id),
             customer_name TEXT NOT NULL,
             phone TEXT NOT NULL,
             email TEXT NOT NULL,
@@ -102,6 +103,7 @@ def init_sqlite_db(conn: sqlite3.Connection) -> None:
         CREATE TABLE IF NOT EXISTS order_details (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             order_id INTEGER NOT NULL REFERENCES order_head(id) ON DELETE CASCADE,
+            product_id INTEGER REFERENCES products(id),
             product_name TEXT NOT NULL,
             quantity INTEGER NOT NULL DEFAULT 1,
             unit_price REAL NOT NULL,
@@ -109,6 +111,46 @@ def init_sqlite_db(conn: sqlite3.Connection) -> None:
         )
         """
     )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS cart_items (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+            quantity INTEGER NOT NULL DEFAULT 1,
+            added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(user_id, product_id)
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS user_addresses (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            label TEXT NOT NULL DEFAULT 'Home',
+            full_name TEXT NOT NULL,
+            phone TEXT NOT NULL,
+            address_line1 TEXT NOT NULL,
+            address_line2 TEXT,
+            city TEXT NOT NULL,
+            state TEXT NOT NULL,
+            pincode TEXT NOT NULL,
+            is_default INTEGER NOT NULL DEFAULT 0,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+    # Check if user_id exists in order_head
+    try:
+        conn.execute("ALTER TABLE order_head ADD COLUMN user_id INTEGER REFERENCES users(id)")
+    except Exception:
+        pass
+    # Check if product_id exists in order_details
+    try:
+        conn.execute("ALTER TABLE order_details ADD COLUMN product_id INTEGER REFERENCES products(id)")
+    except Exception:
+        pass
     # Seed initial admin if it doesn't exist
     cursor = conn.cursor()
     cursor.execute("SELECT id FROM admins WHERE lower(username) = 'admin'")
@@ -123,6 +165,31 @@ def init_sqlite_db(conn: sqlite3.Connection) -> None:
             "INSERT INTO admins (username, password_hash, role) VALUES ('admin', ?, 'admin')",
             (admin_hash,),
         )
+    # Seed initial products if none exist
+    cursor.execute("SELECT COUNT(*) FROM products")
+    count_row = cursor.fetchone()
+    if count_row and count_row[0] == 0:
+        default_products = [
+            ("Mohera Belle", 2499.00, "/products/belle_poster.jpeg", "Grace captured in every drop. Designed for the effortlessly elegant woman.", "active"),
+            ("Mohera Elan", 2499.00, "/products/elan_poster.jpeg", "Vivacious. Bold. Unapologetically you. High-energy fragrance.", "active"),
+            ("Mohera Drive", 2499.00, "/products/drive_poster.jpeg", "Fuel your ambition. Built for the modern man with relentless momentum.", "active"),
+            ("Mohera Titan", 2499.00, "/products/titan_poster.jpeg", "A presence carved in strength. Rich cedar, dark leather, and subtle warm spices.", "active"),
+            ("Mohera Luna", 2799.00, "/products/luna_poster.jpeg", "Grace and allure for unforgettable evenings. Luminous, ethereal top notes.", "active"),
+            ("Devinoire Aphira", 2999.00, "/products/devinoire/aphira.jpeg", "Devinoire luxury fragrance collection - Aphira.", "active"),
+            ("Devinoire Ares", 2999.00, "/products/devinoire/ares.jpeg", "Devinoire luxury fragrance collection - Ares.", "active"),
+            ("Devinoire Athena", 2999.00, "/products/devinoire/athena.jpeg", "Devinoire luxury fragrance collection - Athena.", "active"),
+            ("Devinoire Hades", 2999.00, "/products/devinoire/hades.jpeg", "Devinoire luxury fragrance collection - Hades.", "active"),
+            ("Devinoire Hera", 2999.00, "/products/devinoire/hera.jpeg", "Devinoire luxury fragrance collection - Hera.", "active"),
+            ("Devinoire Nereus", 2999.00, "/products/devinoire/nereus.jpeg", "Devinoire luxury fragrance collection - Nereus.", "active"),
+            ("Devinoire Orion", 2999.00, "/products/devinoire/orion.jpeg", "Devinoire luxury fragrance collection - Orion.", "active"),
+            ("Devinoire Sephora", 2999.00, "/products/devinoire/sephora.jpeg", "Devinoire luxury fragrance collection - Sephora.", "active"),
+        ]
+        for prod in default_products:
+            conn.execute(
+                "INSERT INTO products (product_name, price, image, description, status) VALUES (?, ?, ?, ?, ?)",
+                prod,
+            )
+
     conn.commit()
 
 
@@ -274,11 +341,39 @@ def get_connection() -> Generator:
                         CREATE TABLE IF NOT EXISTS order_details (
                             id SERIAL PRIMARY KEY,
                             order_id INT NOT NULL REFERENCES order_head(id) ON DELETE CASCADE,
+                            product_id INT REFERENCES products(id),
                             product_name VARCHAR(255) NOT NULL,
                             quantity INT NOT NULL DEFAULT 1,
                             unit_price NUMERIC(10, 2) NOT NULL,
                             total_price NUMERIC(10, 2) NOT NULL
                         );
+
+                        CREATE TABLE IF NOT EXISTS cart_items (
+                            id SERIAL PRIMARY KEY,
+                            user_id INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                            product_id INT NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+                            quantity INT NOT NULL DEFAULT 1,
+                            added_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                            UNIQUE(user_id, product_id)
+                        );
+
+                        CREATE TABLE IF NOT EXISTS user_addresses (
+                            id SERIAL PRIMARY KEY,
+                            user_id INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                            label VARCHAR(50) NOT NULL DEFAULT 'Home',
+                            full_name VARCHAR(160) NOT NULL,
+                            phone VARCHAR(50) NOT NULL,
+                            address_line1 VARCHAR(255) NOT NULL,
+                            address_line2 VARCHAR(255),
+                            city VARCHAR(100) NOT NULL,
+                            state VARCHAR(100) NOT NULL,
+                            pincode VARCHAR(20) NOT NULL,
+                            is_default BOOLEAN NOT NULL DEFAULT FALSE,
+                            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+                        );
+
+                        ALTER TABLE order_head ADD COLUMN IF NOT EXISTS user_id INT REFERENCES users(id);
+                        ALTER TABLE order_details ADD COLUMN IF NOT EXISTS product_id INT REFERENCES products(id);
                         """
                     )
                     cur.execute("SELECT id FROM admins WHERE lower(username) = 'admin' LIMIT 1;")

@@ -140,6 +140,7 @@ class ProductResponse(BaseModel):
 # ---------------------------------------------------------------------------
 
 class OrderDetailCreate(BaseModel):
+    product_id: int | None = None
     product_name: str = Field(min_length=1, max_length=255)
     quantity: int = Field(ge=1)
     unit_price: float = Field(ge=0)
@@ -149,6 +150,7 @@ class OrderDetailCreate(BaseModel):
 class OrderDetailResponse(BaseModel):
     id: int
     order_id: int
+    product_id: int | None = None
     product_name: str
     quantity: int
     unit_price: float
@@ -158,6 +160,7 @@ class OrderDetailResponse(BaseModel):
 
 
 class OrderHeadCreate(BaseModel):
+    user_id: int | None = None
     customer_name: str = Field(min_length=1, max_length=160)
     phone: str = Field(min_length=1, max_length=40)
     email: str = Field(default="")
@@ -174,6 +177,7 @@ class OrderHeadCreate(BaseModel):
 
 class OrderHeadResponse(BaseModel):
     id: int
+    user_id: int | None = None
     customer_name: str
     phone: str
     email: str
@@ -197,4 +201,91 @@ class OrderStatusUpdateRequest(BaseModel):
     payment_status: str | None = None  # 'success' | 'pending' | 'failed' | 'cancelled'
     paid_status: int | None = None     # 0 or 1
 
-
+
+# ---------------------------------------------------------------------------
+# Cart
+# ---------------------------------------------------------------------------
+
+class CartItemAdd(BaseModel):
+    product_id: int
+    quantity: int = Field(default=1, ge=1)
+
+
+class CartItemUpdate(BaseModel):
+    quantity: int = Field(ge=0)
+
+
+class CartItemResponse(BaseModel):
+    id: int
+    product_id: int
+    product_name: str
+    price: float
+    image: str | None = None
+    quantity: int
+    subtotal: float
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class CartResponse(BaseModel):
+    items: List[CartItemResponse] = []
+    total: float = 0.0
+    count: int = 0
+
+
+# ---------------------------------------------------------------------------
+# Addresses
+# ---------------------------------------------------------------------------
+
+class AddressCreate(BaseModel):
+    label: str = Field(default="Home", max_length=50)
+    full_name: str = Field(min_length=1, max_length=160)
+    phone: str = Field(min_length=1, max_length=40)
+    address_line1: str = Field(min_length=1, max_length=255)
+    address_line2: str | None = Field(default=None, max_length=255)
+    city: str = Field(min_length=1, max_length=100)
+    state: str = Field(min_length=1, max_length=100)
+    pincode: str = Field(min_length=1, max_length=20)
+    is_default: bool = False
+
+
+class AddressUpdate(BaseModel):
+    label: str | None = Field(default=None, max_length=50)
+    full_name: str | None = Field(default=None, max_length=160)
+    phone: str | None = Field(default=None, max_length=40)
+    address_line1: str | None = Field(default=None, max_length=255)
+    address_line2: str | None = Field(default=None, max_length=255)
+    city: str | None = Field(default=None, max_length=100)
+    state: str | None = Field(default=None, max_length=100)
+    pincode: str | None = Field(default=None, max_length=20)
+    is_default: bool | None = None
+
+
+class AddressResponse(BaseModel):
+    id: int
+    user_id: int
+    label: str
+    full_name: str
+    phone: str
+    address_line1: str
+    address_line2: str | None = None
+    city: str
+    state: str
+    pincode: str
+    is_default: bool
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+# ---------------------------------------------------------------------------
+# Checkout
+# ---------------------------------------------------------------------------
+
+class CheckoutRequest(BaseModel):
+    address_id: int | None = None
+    address: AddressCreate | None = None
+    payment_mode: str = Field(default="Cash on Delivery", max_length=50)
+
+
+

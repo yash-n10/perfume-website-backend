@@ -1,8 +1,10 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.addresses import router as addresses_router
 from app.admin import router as admin_router
 from app.auth import router as auth_router
+from app.cart import router as cart_router
 from app.config import settings
 from app.database import get_connection
 from app.email_service import send_otp_email
@@ -26,7 +28,8 @@ app.add_middleware(
     expose_headers=["*"],
 )
 app.include_router(auth_router)
-app.include_router(enquiries_router)
+app.include_router(cart_router)
+app.include_router(addresses_router)
 app.include_router(orders_router)
 app.include_router(products_router)
 app.include_router(admin_router)

@@ -6,12 +6,14 @@ from app.config import settings
 from app.database import get_connection
 from app.email_service import send_order_receipt_email
 from app.schemas import (
+    CheckoutRequest,
     OrderDetailResponse,
     OrderHeadCreate,
     OrderHeadResponse,
     OrderStatusUpdateRequest,
+    UserResponse,
 )
-from app.security import get_current_admin
+from app.security import get_current_admin, get_current_user
 from app.whatsapp_service import (
     build_whatsapp_web_url,
     format_whatsapp_receipt_text,
@@ -53,17 +55,18 @@ def create_order(payload: OrderHeadCreate) -> OrderHeadResponse:
         head_row = conn.execute(
             """
             INSERT INTO order_head (
-                customer_name, phone, email, address,
+                user_id, customer_name, phone, email, address,
                 order_type, total_price, payment_mode,
                 payment_status, paid_status
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING
-                id, customer_name, phone, email, address,
+                id, user_id, customer_name, phone, email, address,
                 order_type, total_price, payment_mode,
                 payment_status, paid_status, order_datetime
             """,
             (
+                payload.user_id,
                 payload.customer_name.strip(),
                 payload.phone.strip(),
                 str(payload.email or "").strip().lower(),
@@ -87,19 +90,25 @@ def create_order(payload: OrderHeadCreate) -> OrderHeadResponse:
             detail_row = conn.execute(
                 """
                 INSERT INTO order_details (
-                    order_id, product_name, quantity, unit_price, total_price
+                    order_id, product_id, product_name, quantity, unit_price, total_price
                 )
-                VALUES (%s, %s, %s, %s, %s)
-                RETURNING id, order_id, product_name, quantity, unit_price, total_price
+                VALUES (%s, %s, %s, %s, %s, %s)
+                RETURNING id, order_id, product_id, product_name, quantity, unit_price, total_price
                 """,
                 (
                     order_id,
+                    getattr(item, "product_id", None),
                     item.product_name.strip(),
                     item.quantity,
                     item.unit_price,
                     item.total_price,
                 ),
             ).fetchone()
+
+            if not detail_row:
+                raise HTTPException(status_code=500, detail="Failed to insert order item.")
+
+            inserted_items.append(OrderDetailResponse.model_validate(detail_row))
 
             if not detail_row:
                 raise HTTPException(status_code=500, detail="Failed to insert order item.")
@@ -144,6 +153,7 @@ def create_order(payload: OrderHeadCreate) -> OrderHeadResponse:
     # ── 4. Build and return response ───────────────────────────────────────
     return OrderHeadResponse(
         id=head_row["id"],
+        user_id=head_row.get("user_id"),
         customer_name=head_row["customer_name"],
         phone=head_row["phone"],
         email=head_row["email"],
@@ -160,6 +170,362 @@ def create_order(payload: OrderHeadCreate) -> OrderHeadResponse:
         whatsapp_url=whatsapp_url,
         gst_number=getattr(settings, "gst_number", "27AABCM1234F1Z1"),
     )
+
+
+@router.post("/checkout", response_model=OrderHeadResponse, status_code=201)
+def checkout_cart(
+    payload: CheckoutRequest,
+    user: UserResponse = Depends(get_current_user),
+) -> OrderHeadResponse:
+    """
+    Authenticated Checkout:
+    - Verifies user's cart
+    - Resolves shipping address (selected from address book or provided inline)
+    - Creates order in order_head with user_id
+    - Inserts line items in order_details
+    - Clears user's cart
+    - Sends notifications
+    """
+    with get_connection() as conn:
+        # 1. Fetch cart items
+        cart_rows = conn.execute(
+            """
+            SELECT c.id, c.product_id, c.quantity, p.product_name, p.price
+            FROM cart_items c
+            JOIN products p ON c.product_id = p.id
+            WHERE c.user_id = %s
+            ORDER BY c.added_at ASC
+            """,
+            (user.id,),
+        ).fetchall()
+
+        if not cart_rows:
+            raise HTTPException(status_code=400, detail="Your cart is empty. Add products before checkout.")
+
+        # 2. Resolve address
+        customer_name = user.name
+        phone = user.phone
+        email = str(user.email)
+        shipping_address = ""
+
+        if payload.address_id:
+            addr = conn.execute(
+                "SELECT * FROM user_addresses WHERE id = %s AND user_id = %s",
+                (payload.address_id, user.id),
+            ).fetchone()
+            if not addr:
+                raise HTTPException(status_code=404, detail="Selected delivery address not found.")
+            customer_name = addr["full_name"]
+            phone = addr["phone"]
+            parts = [addr["address_line1"]]
+            if addr.get("address_line2"):
+                parts.append(addr["address_line2"])
+            parts.append(f"{addr['city']}, {addr['state']} - {addr['pincode']}")
+            shipping_address = f"[{addr['label']}] " + ", ".join(parts)
+        elif payload.address:
+            a = payload.address
+            customer_name = a.full_name
+            phone = a.phone
+            parts = [a.address_line1]
+            if a.address_line2:
+                parts.append(a.address_line2)
+            parts.append(f"{a.city}, {a.state} - {a.pincode}")
+            shipping_address = f"[{a.label}] " + ", ".join(parts)
+
+            # Also persist in user_addresses
+            conn.execute(
+                """
+                INSERT INTO user_addresses (
+                    user_id, label, full_name, phone,
+                    address_line1, address_line2, city, state, pincode, is_default
+                )
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """,
+                (
+                    user.id,
+                    a.label.strip(),
+                    a.full_name.strip(),
+                    a.phone.strip(),
+                    a.address_line1.strip(),
+                    a.address_line2.strip() if a.address_line2 else None,
+                    a.city.strip(),
+                    a.state.strip(),
+                    a.pincode.strip(),
+                    1 if a.is_default else 0,
+                ),
+            )
+        else:
+            raise HTTPException(status_code=400, detail="Please select or provide a shipping address.")
+
+        # 3. Calculate total
+        total_price = sum(round(float(item["price"]) * int(item["quantity"]), 2) for item in cart_rows)
+        total_price = round(total_price, 2)
+
+        # 4. Insert order_head
+        payment_mode = payload.payment_mode or "Cash on Delivery"
+        head_row = conn.execute(
+            """
+            INSERT INTO order_head (
+                user_id, customer_name, phone, email, address,
+                order_type, total_price, payment_mode,
+                payment_status, paid_status
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            RETURNING
+                id, user_id, customer_name, phone, email, address,
+                order_type, total_price, payment_mode,
+                payment_status, paid_status, order_datetime
+            """,
+            (
+                user.id,
+                customer_name.strip(),
+                phone.strip(),
+                email.strip().lower(),
+                shipping_address.strip(),
+                "online",
+                total_price,
+                payment_mode.strip(),
+                "pending",
+                0,
+            ),
+        ).fetchone()
+
+        if not head_row:
+            raise HTTPException(status_code=500, detail="Failed to place order.")
+
+        order_id = head_row["id"]
+
+        # 5. Insert line items
+        inserted_items: list[OrderDetailResponse] = []
+        for c in cart_rows:
+            unit_price = float(c["price"])
+            quantity = int(c["quantity"])
+            item_total = round(unit_price * quantity, 2)
+            d_row = conn.execute(
+                """
+                INSERT INTO order_details (
+                    order_id, product_id, product_name, quantity, unit_price, total_price
+                )
+                VALUES (%s, %s, %s, %s, %s, %s)
+                RETURNING id, order_id, product_id, product_name, quantity, unit_price, total_price
+                """,
+                (
+                    order_id,
+                    c["product_id"],
+                    c["product_name"].strip(),
+                    quantity,
+                    unit_price,
+                    item_total,
+                ),
+            ).fetchone()
+            inserted_items.append(OrderDetailResponse.model_validate(d_row))
+
+        # 6. Clear user cart
+        conn.execute("DELETE FROM cart_items WHERE user_id = %s", (user.id,))
+
+    # 7. Notifications
+    order_dict = {
+        "id": head_row["id"],
+        "customer_name": head_row["customer_name"],
+        "phone": head_row["phone"],
+        "email": head_row["email"],
+        "address": head_row["address"],
+        "order_type": head_row["order_type"],
+        "total_price": head_row["total_price"],
+        "payment_mode": head_row["payment_mode"],
+        "payment_status": head_row["payment_status"],
+        "paid_status": head_row["paid_status"],
+        "order_datetime": head_row["order_datetime"],
+        "items": [i.model_dump() for i in inserted_items],
+    }
+
+    email_sent = False
+    if order_dict.get("email"):
+        try:
+            email_sent = send_order_receipt_email(order_dict)
+        except Exception:
+            email_sent = False
+
+    whatsapp_sent = False
+    if order_dict.get("phone"):
+        try:
+            whatsapp_sent = send_order_receipt_whatsapp(order_dict)
+        except Exception:
+            whatsapp_sent = False
+
+    whatsapp_url = build_whatsapp_web_url(
+        head_row["phone"],
+        format_whatsapp_receipt_text(order_dict),
+    )
+
+    return OrderHeadResponse(
+        id=head_row["id"],
+        user_id=head_row.get("user_id"),
+        customer_name=head_row["customer_name"],
+        phone=head_row["phone"],
+        email=head_row["email"],
+        address=head_row["address"],
+        order_type=head_row["order_type"],
+        total_price=head_row["total_price"],
+        payment_mode=head_row["payment_mode"],
+        payment_status=head_row["payment_status"],
+        paid_status=head_row["paid_status"],
+        order_datetime=head_row["order_datetime"],
+        items=inserted_items,
+        email_sent=email_sent,
+        whatsapp_sent=whatsapp_sent,
+        whatsapp_url=whatsapp_url,
+        gst_number=getattr(settings, "gst_number", "27AABCM1234F1Z1"),
+    )
+
+
+@router.get("/my-orders", response_model=list[OrderHeadResponse])
+def get_my_orders(
+    user: UserResponse = Depends(get_current_user),
+) -> list[OrderHeadResponse]:
+    """
+    Authenticated: Fetch all past orders for current logged-in user.
+    """
+    with get_connection() as conn:
+        head_rows = conn.execute(
+            """
+            SELECT id, user_id, customer_name, phone, email, address,
+                   order_type, total_price, payment_mode,
+                   payment_status, paid_status, order_datetime
+            FROM order_head
+            WHERE user_id = %s OR lower(email) = %s
+            ORDER BY id DESC
+            """,
+            (user.id, str(user.email).lower()),
+        ).fetchall()
+
+        orders: list[OrderHeadResponse] = []
+        for h in head_rows:
+            detail_rows = conn.execute(
+                """
+                SELECT id, order_id, product_id, product_name, quantity, unit_price, total_price
+                FROM order_details
+                WHERE order_id = %s
+                ORDER BY id ASC
+                """,
+                (h["id"],),
+            ).fetchall()
+            items = [OrderDetailResponse.model_validate(d) for d in detail_rows]
+
+            order_dict = {
+                "id": h["id"],
+                "customer_name": h["customer_name"],
+                "phone": h["phone"],
+                "email": h["email"],
+                "address": h["address"],
+                "order_type": h["order_type"],
+                "total_price": h["total_price"],
+                "payment_mode": h["payment_mode"],
+                "payment_status": h["payment_status"],
+                "paid_status": h["paid_status"],
+                "order_datetime": h["order_datetime"],
+                "items": items,
+            }
+            whatsapp_url = build_whatsapp_web_url(
+                h["phone"],
+                format_whatsapp_receipt_text(order_dict),
+            )
+
+            orders.append(
+                OrderHeadResponse(
+                    id=h["id"],
+                    user_id=h.get("user_id"),
+                    customer_name=h["customer_name"],
+                    phone=h["phone"],
+                    email=h["email"],
+                    address=h["address"],
+                    order_type=h["order_type"],
+                    total_price=h["total_price"],
+                    payment_mode=h["payment_mode"],
+                    payment_status=h["payment_status"],
+                    paid_status=h["paid_status"],
+                    order_datetime=h["order_datetime"],
+                    items=items,
+                    email_sent=False,
+                    whatsapp_sent=False,
+                    whatsapp_url=whatsapp_url,
+                    gst_number=getattr(settings, "gst_number", "27AABCM1234F1Z1"),
+                )
+            )
+
+        return orders
+
+
+@router.get("/my-orders/{order_id}", response_model=OrderHeadResponse)
+def get_my_order_detail(
+    order_id: int,
+    user: UserResponse = Depends(get_current_user),
+) -> OrderHeadResponse:
+    """
+    Authenticated: Fetch a single past order by ID for current logged-in user.
+    """
+    with get_connection() as conn:
+        h = conn.execute(
+            """
+            SELECT id, user_id, customer_name, phone, email, address,
+                   order_type, total_price, payment_mode,
+                   payment_status, paid_status, order_datetime
+            FROM order_head
+            WHERE id = %s AND (user_id = %s OR lower(email) = %s)
+            """,
+            (order_id, user.id, str(user.email).lower()),
+        ).fetchone()
+
+        if not h:
+            raise HTTPException(status_code=404, detail="Order not found.")
+
+        detail_rows = conn.execute(
+            """
+            SELECT id, order_id, product_id, product_name, quantity, unit_price, total_price
+            FROM order_details
+            WHERE order_id = %s
+            ORDER BY id ASC
+            """,
+            (order_id,),
+        ).fetchall()
+        items = [OrderDetailResponse.model_validate(d) for d in detail_rows]
+
+        order_dict = {
+            "id": h["id"],
+            "customer_name": h["customer_name"],
+            "phone": h["phone"],
+            "email": h["email"],
+            "address": h["address"],
+            "order_type": h["order_type"],
+            "total_price": h["total_price"],
+            "payment_mode": h["payment_mode"],
+            "payment_status": h["payment_status"],
+            "paid_status": h["paid_status"],
+            "order_datetime": h["order_datetime"],
+            "items": items,
+        }
+        whatsapp_url = build_whatsapp_web_url(
+            h["phone"],
+            format_whatsapp_receipt_text(order_dict),
+        )
+
+        return OrderHeadResponse(
+            id=h["id"],
+            user_id=h.get("user_id"),
+            customer_name=h["customer_name"],
+            phone=h["phone"],
+            email=h["email"],
+            address=h["address"],
+            order_type=h["order_type"],
+            total_price=h["total_price"],
+            payment_mode=h["payment_mode"],
+            payment_status=h["payment_status"],
+            paid_status=h["paid_status"],
+            order_datetime=h["order_datetime"],
+            items=items,
+            whatsapp_url=whatsapp_url,
+            gst_number=getattr(settings, "gst_number", "27AABCM1234F1Z1"),
+        )
 
 
 @router.get("", response_model=list[OrderHeadResponse])

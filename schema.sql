@@ -81,6 +81,7 @@ CREATE INDEX IF NOT EXISTS idx_products_add_time ON products (add_time DESC);
 -- Stores customer order summary / header
 CREATE TABLE IF NOT EXISTS order_head (
     id SERIAL PRIMARY KEY,
+    user_id INT REFERENCES users(id) ON DELETE SET NULL,
     customer_name VARCHAR(160) NOT NULL,
     phone VARCHAR(40) NOT NULL,
     email VARCHAR(255) NOT NULL,
@@ -96,15 +97,17 @@ CREATE TABLE IF NOT EXISTS order_head (
     order_datetime TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE INDEX IF NOT EXISTS idx_order_head_user_id ON order_head (user_id);
 CREATE INDEX IF NOT EXISTS idx_order_head_email ON order_head (LOWER(email));
 CREATE INDEX IF NOT EXISTS idx_order_head_status ON order_head (payment_status);
 CREATE INDEX IF NOT EXISTS idx_order_head_datetime ON order_head (order_datetime DESC);
 
--- 6. Order Details Table
+-- 7. Order Details Table
 -- Stores individual line items for each order
 CREATE TABLE IF NOT EXISTS order_details (
     id SERIAL PRIMARY KEY,
     order_id INT NOT NULL REFERENCES order_head(id) ON DELETE CASCADE,
+    product_id INT REFERENCES products(id) ON DELETE SET NULL,
     product_name VARCHAR(255) NOT NULL,
     quantity INT NOT NULL DEFAULT 1 CHECK (quantity > 0),
     unit_price NUMERIC(10, 2) NOT NULL,
@@ -112,6 +115,36 @@ CREATE TABLE IF NOT EXISTS order_details (
 );
 
 CREATE INDEX IF NOT EXISTS idx_order_details_order_id ON order_details (order_id);
+
+-- 8. Cart Items Table
+CREATE TABLE IF NOT EXISTS cart_items (
+    id SERIAL PRIMARY KEY,
+    user_id INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    product_id INT NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+    quantity INT NOT NULL DEFAULT 1 CHECK (quantity > 0),
+    added_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(user_id, product_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_cart_items_user_id ON cart_items (user_id);
+
+-- 9. User Addresses Table
+CREATE TABLE IF NOT EXISTS user_addresses (
+    id SERIAL PRIMARY KEY,
+    user_id INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    label VARCHAR(50) NOT NULL DEFAULT 'Home',
+    full_name VARCHAR(160) NOT NULL,
+    phone VARCHAR(50) NOT NULL,
+    address_line1 VARCHAR(255) NOT NULL,
+    address_line2 VARCHAR(255),
+    city VARCHAR(100) NOT NULL,
+    state VARCHAR(100) NOT NULL,
+    pincode VARCHAR(20) NOT NULL,
+    is_default BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_addresses_user_id ON user_addresses (user_id);
 
 -- Optional trigger function to auto-update updated_at timestamp
 CREATE OR REPLACE FUNCTION trigger_set_timestamp()
