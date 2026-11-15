@@ -141,6 +141,21 @@ def init_sqlite_db(conn: sqlite3.Connection) -> None:
         )
         """
     )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS order_reviews (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            order_id INTEGER NOT NULL REFERENCES order_head(id) ON DELETE CASCADE,
+            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            product_id INTEGER REFERENCES products(id),
+            product_name TEXT,
+            rating INTEGER NOT NULL CHECK (rating >= 1 AND rating <= 5),
+            review_title TEXT,
+            comment TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
     # Check if user_id exists in order_head
     try:
         conn.execute("ALTER TABLE order_head ADD COLUMN user_id INTEGER REFERENCES users(id)")
@@ -369,6 +384,18 @@ def get_connection() -> Generator:
                             state VARCHAR(100) NOT NULL,
                             pincode VARCHAR(20) NOT NULL,
                             is_default BOOLEAN NOT NULL DEFAULT FALSE,
+                            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+                        );
+
+                        CREATE TABLE IF NOT EXISTS order_reviews (
+                            id SERIAL PRIMARY KEY,
+                            order_id INT NOT NULL REFERENCES order_head(id) ON DELETE CASCADE,
+                            user_id INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                            product_id INT REFERENCES products(id),
+                            product_name VARCHAR(255),
+                            rating INT NOT NULL CHECK (rating >= 1 AND rating <= 5),
+                            review_title VARCHAR(255),
+                            comment TEXT NOT NULL,
                             created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
                         );
 

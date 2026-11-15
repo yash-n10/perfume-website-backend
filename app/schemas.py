@@ -175,6 +175,29 @@ class OrderHeadCreate(BaseModel):
     items: List[OrderDetailCreate]
 
 
+class OrderReviewCreate(BaseModel):
+    product_id: int | None = None
+    product_name: str | None = None
+    rating: int = Field(ge=1, le=5)
+    review_title: str | None = None
+    comment: str = Field(min_length=2)
+
+
+class OrderReviewResponse(BaseModel):
+    id: int
+    order_id: int
+    user_id: int
+    product_id: int | None = None
+    product_name: str | None = None
+    rating: int
+    review_title: str | None = None
+    comment: str
+    created_at: datetime | None = None
+    customer_name: str | None = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class OrderHeadResponse(BaseModel):
     id: int
     user_id: int | None = None
@@ -189,6 +212,7 @@ class OrderHeadResponse(BaseModel):
     paid_status: int
     order_datetime: datetime
     items: List[OrderDetailResponse] = []
+    reviews: List[OrderReviewResponse] = []
     email_sent: bool = False
     whatsapp_sent: bool = False
     whatsapp_url: str | None = None

@@ -11,6 +11,8 @@ from app.schemas import (
     OrderDetailResponse,
     OrderHeadCreate,
     OrderHeadResponse,
+    OrderReviewCreate,
+    OrderReviewResponse,
     OrderStatusUpdateRequest,
     UserResponse,
 )
@@ -541,6 +543,32 @@ def get_my_orders(
             ).fetchall()
             items = [OrderDetailResponse.model_validate(d) for d in detail_rows]
 
+            review_rows = conn.execute(
+                """
+                SELECT id, order_id, user_id, product_id, product_name,
+                       rating, review_title, comment, created_at
+                FROM order_reviews
+                WHERE order_id = %s
+                ORDER BY id DESC
+                """,
+                (h["id"],),
+            ).fetchall()
+            reviews = [
+                OrderReviewResponse(
+                    id=r["id"],
+                    order_id=r["order_id"],
+                    user_id=r["user_id"],
+                    product_id=r.get("product_id"),
+                    product_name=r.get("product_name"),
+                    rating=r["rating"],
+                    review_title=r.get("review_title"),
+                    comment=r["comment"],
+                    created_at=r.get("created_at"),
+                    customer_name=h["customer_name"] or user.name,
+                )
+                for r in review_rows
+            ]
+
             order_dict = {
                 "id": h["id"],
                 "customer_name": h["customer_name"],
@@ -575,6 +603,7 @@ def get_my_orders(
                     paid_status=h["paid_status"],
                     order_datetime=h["order_datetime"],
                     items=items,
+                    reviews=reviews,
                     email_sent=False,
                     whatsapp_sent=False,
                     whatsapp_url=whatsapp_url,
@@ -619,6 +648,32 @@ def get_my_order_detail(
         ).fetchall()
         items = [OrderDetailResponse.model_validate(d) for d in detail_rows]
 
+        review_rows = conn.execute(
+            """
+            SELECT id, order_id, user_id, product_id, product_name,
+                   rating, review_title, comment, created_at
+            FROM order_reviews
+            WHERE order_id = %s
+            ORDER BY id DESC
+            """,
+            (order_id,),
+        ).fetchall()
+        reviews = [
+            OrderReviewResponse(
+                id=r["id"],
+                order_id=r["order_id"],
+                user_id=r["user_id"],
+                product_id=r.get("product_id"),
+                product_name=r.get("product_name"),
+                rating=r["rating"],
+                review_title=r.get("review_title"),
+                comment=r["comment"],
+                created_at=r.get("created_at"),
+                customer_name=h["customer_name"] or user.name,
+            )
+            for r in review_rows
+        ]
+
         order_dict = {
             "id": h["id"],
             "customer_name": h["customer_name"],
@@ -652,9 +707,126 @@ def get_my_order_detail(
             paid_status=h["paid_status"],
             order_datetime=h["order_datetime"],
             items=items,
+            reviews=reviews,
             whatsapp_url=whatsapp_url,
             gst_number=getattr(settings, "gst_number", "27AABCM1234F1Z1"),
         )
+
+
+@router.post("/{order_id}/reviews", response_model=OrderReviewResponse, status_code=201)
+def create_order_review(
+    order_id: int,
+    payload: OrderReviewCreate,
+    user: UserResponse = Depends(get_current_user),
+) -> OrderReviewResponse:
+    """
+    Authenticated: Submit a review/feedback for a completed or placed order.
+    """
+    with get_connection() as conn:
+        order = conn.execute(
+            """
+            SELECT id, user_id, email, customer_name FROM order_head
+            WHERE id = %s AND (user_id = %s OR lower(email) = %s)
+            """,
+            (order_id, user.id, str(user.email).lower()),
+        ).fetchone()
+
+        if not order:
+            raise HTTPException(status_code=404, detail="Order not found or does not belong to you.")
+
+        # If product_id is provided, verify it is in order_details (or fill product_name)
+        product_name = payload.product_name
+        if payload.product_id and not product_name:
+            detail = conn.execute(
+                "SELECT product_name FROM order_details WHERE order_id = %s AND product_id = %s LIMIT 1",
+                (order_id, payload.product_id),
+            ).fetchone()
+            if detail:
+                product_name = detail["product_name"]
+
+        rev_row = conn.execute(
+            """
+            INSERT INTO order_reviews (
+                order_id, user_id, product_id, product_name, rating, review_title, comment
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            RETURNING id, order_id, user_id, product_id, product_name, rating, review_title, comment, created_at
+            """,
+            (
+                order_id,
+                user.id,
+                payload.product_id,
+                product_name,
+                payload.rating,
+                payload.review_title,
+                payload.comment.strip(),
+            ),
+        ).fetchone()
+
+        if not rev_row:
+            raise HTTPException(status_code=500, detail="Failed to save review.")
+
+        return OrderReviewResponse(
+            id=rev_row["id"],
+            order_id=rev_row["order_id"],
+            user_id=rev_row["user_id"],
+            product_id=rev_row.get("product_id"),
+            product_name=rev_row.get("product_name"),
+            rating=rev_row["rating"],
+            review_title=rev_row.get("review_title"),
+            comment=rev_row["comment"],
+            created_at=rev_row.get("created_at"),
+            customer_name=order["customer_name"] or user.name,
+        )
+
+
+@router.get("/{order_id}/reviews", response_model=list[OrderReviewResponse])
+def get_order_reviews(
+    order_id: int,
+    user: UserResponse = Depends(get_current_user),
+) -> list[OrderReviewResponse]:
+    """
+    Authenticated: Fetch reviews for a specific order.
+    """
+    with get_connection() as conn:
+        rev_rows = conn.execute(
+            """
+            SELECT r.id, r.order_id, r.user_id, r.product_id, r.product_name,
+                   r.rating, r.review_title, r.comment, r.created_at,
+                   u.name AS customer_name
+            FROM order_reviews r
+            LEFT JOIN users u ON r.user_id = u.id
+            WHERE r.order_id = %s
+            ORDER BY r.id DESC
+            """,
+            (order_id,),
+        ).fetchall()
+
+        return [OrderReviewResponse.model_validate(r) for r in rev_rows]
+
+
+@router.get("/reviews/my", response_model=list[OrderReviewResponse])
+def get_my_all_reviews(
+    user: UserResponse = Depends(get_current_user),
+) -> list[OrderReviewResponse]:
+    """
+    Authenticated: Fetch all reviews submitted by the current user.
+    """
+    with get_connection() as conn:
+        rev_rows = conn.execute(
+            """
+            SELECT r.id, r.order_id, r.user_id, r.product_id, r.product_name,
+                   r.rating, r.review_title, r.comment, r.created_at,
+                   u.name AS customer_name
+            FROM order_reviews r
+            LEFT JOIN users u ON r.user_id = u.id
+            WHERE r.user_id = %s
+            ORDER BY r.id DESC
+            """,
+            (user.id,),
+        ).fetchall()
+
+        return [OrderReviewResponse.model_validate(r) for r in rev_rows]
 
 
 @router.get("", response_model=list[OrderHeadResponse])
